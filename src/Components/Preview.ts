@@ -9,6 +9,9 @@ export class Preview {
   private panStartX: number = 0;
   private panStartY: number = 0;
   private viewportElement!: HTMLElement;
+  private lastViewportWidth: number = 0;
+  private lastViewportHeight: number = 0;
+  private autoFit: boolean = true;
 
   constructor() {
     this.container = this.createContainer();
@@ -22,7 +25,22 @@ export class Preview {
     // Observe the container for size changes
     this.resizeObserver = new ResizeObserver(() => {
       if (this.currentWidth && this.currentHeight) {
-        this.applyDimensions();
+        const currentWidth = this.viewportElement.clientWidth;
+        const currentHeight = this.viewportElement.clientHeight;
+        
+        // Only auto-fit if viewport size actually changed and autoFit is enabled
+        if (this.autoFit && 
+            (currentWidth !== this.lastViewportWidth || currentHeight !== this.lastViewportHeight)) {
+          this.lastViewportWidth = currentWidth;
+          this.lastViewportHeight = currentHeight;
+          this.fitToScreen();
+          
+          // Update zoom display
+          const zoomDisplay = this.container.querySelector('#zoomDisplay') as HTMLElement;
+          if (zoomDisplay) {
+            zoomDisplay.textContent = `${Math.round(this.zoomLevel * 100)}%`;
+          }
+        }
       }
     });
     
@@ -181,6 +199,8 @@ export class Preview {
     const scaleY = containerHeight / this.currentHeight;
     const scale = Math.min(scaleX, scaleY, 1);
 
+    // Re-enable auto-fit when explicitly clicking fit button
+    this.autoFit = true;
     this.setZoom(scale);
   }
 
@@ -281,7 +301,14 @@ export class Preview {
 
     // Apply dimensions
     if (width && height) {
-      this.applyDimensions();
+      // Enable auto-fit and fit to screen on initial load or dimension change
+      this.autoFit = true;
+      this.fitToScreen();
+      // Update zoom display
+      const zoomDisplay = this.container.querySelector('#zoomDisplay') as HTMLElement;
+      if (zoomDisplay) {
+        zoomDisplay.textContent = `${Math.round(this.zoomLevel * 100)}%`;
+      }
     } else {
       this.iframe.style.width = '100%';
       this.iframe.style.height = '100%';
@@ -300,6 +327,9 @@ export class Preview {
       this.setZoom(newZoom);
       return;
     }
+
+    // Disable auto-fit when user manually zooms
+    this.autoFit = false;
 
     // Store current state
     const oldZoom = this.zoomLevel;
