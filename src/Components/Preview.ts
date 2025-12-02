@@ -2,10 +2,28 @@ export class Preview {
   private container: HTMLElement;
   private iframe: HTMLIFrameElement;
   private zoomLevel: number = 1;
+  private currentWidth?: number;
+  private currentHeight?: number;
+  private resizeObserver!: ResizeObserver;
 
   constructor() {
     this.container = this.createContainer();
     this.iframe = this.container.querySelector('#previewFrame') as HTMLIFrameElement;
+    this.setupResizeObserver();
+  }
+
+  private setupResizeObserver(): void {
+    // Observe the container for size changes
+    this.resizeObserver = new ResizeObserver(() => {
+      if (this.currentWidth && this.currentHeight) {
+        this.applyDimensions();
+      }
+    });
+    
+    const containerElement = this.container.querySelector('.flex-1') as HTMLElement;
+    if (containerElement) {
+      this.resizeObserver.observe(containerElement);
+    }
   }
 
   private createContainer(): HTMLElement {
@@ -24,7 +42,43 @@ export class Preview {
     return div;
   }
 
+  private applyDimensions(): void {
+    if (!this.currentWidth || !this.currentHeight) return;
+
+    const container = this.iframe.parentElement;
+    if (!container) return;
+
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
+    
+    // Calculate aspect ratio preserving dimensions
+    const aspectRatio = this.currentWidth / this.currentHeight;
+    const containerAspectRatio = containerWidth / containerHeight;
+    
+    let finalWidth, finalHeight;
+    
+    if (containerAspectRatio > aspectRatio) {
+      // Container is wider, fit to height
+      finalHeight = containerHeight;
+      finalWidth = finalHeight * aspectRatio;
+    } else {
+      // Container is taller, fit to width
+      finalWidth = containerWidth;
+      finalHeight = finalWidth / aspectRatio;
+    }
+    
+    // Apply zoom
+    this.iframe.style.width = `${finalWidth}px`;
+    this.iframe.style.height = `${finalHeight}px`;
+    this.iframe.style.transform = `scale(${this.zoomLevel})`;
+    this.iframe.style.transformOrigin = 'center center';
+  }
+
   public updatePreview(html: string, width?: number, height?: number): void {
+    // Store current dimensions
+    this.currentWidth = width;
+    this.currentHeight = height;
+
     const previewHtml = `
       <!DOCTYPE html>
       <html>
@@ -51,57 +105,36 @@ export class Preview {
       </html>
     `;
 
-    // Apply aspect ratio if dimensions provided
-    if (width && height) {
-      // Get the actual container dimensions
-      const container = this.iframe.parentElement;
-      if (container) {
-        const containerWidth = container.clientWidth;
-        const containerHeight = container.clientHeight;
-        
-        // Calculate what the height would be if we use full width
-        const heightIfFullWidth = (containerWidth * height) / width;
-        
-        // Calculate what the width would be if we use full height
-        const widthIfFullHeight = (containerHeight * width) / height;
-        
-        // Choose the option that fits
-        let finalWidth, finalHeight;
-        if (heightIfFullWidth <= containerHeight) {
-          // Use full width, height will fit
-          finalWidth = containerWidth;
-          finalHeight = heightIfFullWidth;
-        } else {
-          // Use full height, width will fit
-          finalWidth = widthIfFullHeight;
-          finalHeight = containerHeight;
-        }
-        
-        // Apply zoom
-        this.iframe.style.width = `${finalWidth * this.zoomLevel}px`;
-        this.iframe.style.height = `${finalHeight * this.zoomLevel}px`;
-        this.iframe.style.transform = `scale(${this.zoomLevel})`;
-        this.iframe.style.transformOrigin = 'center center';
-      }
-    } else {
-      this.iframe.style.width = '100%';
-      this.iframe.style.height = '100%';
-      this.iframe.style.transform = 'none';
-    }
-
+    // Write HTML to iframe
     const iframeDoc = this.iframe.contentDocument || this.iframe.contentWindow?.document;
     if (iframeDoc) {
       iframeDoc.open();
       iframeDoc.write(previewHtml);
       iframeDoc.close();
     }
+
+    // Apply dimensions
+    if (width && height) {
+      this.applyDimensions();
+    } else {
+      this.iframe.style.width = '100%';
+      this.iframe.style.height = '100%';
+      this.iframe.style.transform = 'none';
+    }
   }
 
   public setZoom(zoom: number): void {
     this.zoomLevel = zoom;
+    this.applyDimensions();
   }
 
   public getElement(): HTMLElement {
     return this.container;
+  }
+
+  public destroy(): void {
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+    }
   }
 }
