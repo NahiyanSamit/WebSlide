@@ -18,6 +18,10 @@ export class Toolbar {
   }
 
   private createContainer(): HTMLElement {
+    // Load saved dimensions from localStorage
+    const savedWidth = localStorage.getItem('webslide-width') || '1920';
+    const savedHeight = localStorage.getItem('webslide-height') || '1080';
+    
     const div = document.createElement('div');
     div.className = 'flex items-center justify-between px-6 py-4 bg-gray-50 border-b-2 border-gray-200';
     div.innerHTML = `
@@ -25,11 +29,11 @@ export class Toolbar {
         <h2 class="text-lg font-semibold">Slide Editor</h2>
         <div class="flex items-center gap-2 text-sm">
           <label class="text-gray-600">Width:</label>
-          <input type="number" id="pageWidth" value="1920" 
+          <input type="number" id="pageWidth" value="${savedWidth}" 
             class="w-20 bg-white px-2 py-1 border border-gray-300 rounded focus:border-primary focus:outline-none" />
           <span class="text-gray-400">×</span>
           <label class="text-gray-600">Height:</label>
-          <input type="number" id="pageHeight" value="1080" 
+          <input type="number" id="pageHeight" value="${savedHeight}" 
             class="w-20 bg-white px-2 py-1 border border-gray-300 rounded focus:border-primary focus:outline-none" />
         </div>
       </div>
@@ -60,9 +64,15 @@ export class Toolbar {
   }
 
   private onDimensionChange(): void {
+    const dimensions = this.getDimensions();
+    
+    // Save to localStorage
+    localStorage.setItem('webslide-width', dimensions.width.toString());
+    localStorage.setItem('webslide-height', dimensions.height.toString());
+    
     // Trigger dimension change event
     const event = new CustomEvent('dimensionChange', {
-      detail: this.getDimensions()
+      detail: dimensions
     });
     this.container.dispatchEvent(event);
   }
