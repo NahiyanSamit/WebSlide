@@ -109,9 +109,12 @@ class App {
           this.updateStatusBar();
           break;
         case 'slide-updated':
-          // Refresh preview if current slide was updated
+          // Don't reload editor when slide is updated from typing
+          // Only update preview and sidebar thumbnail
           if (data?.index === this.state.currentSlideIndex) {
-            this.loadCurrentSlide();
+            const dimensions = this.toolbar.getDimensions();
+            const slide = this.state.getCurrentSlide();
+            this.preview.updatePreview(slide.html, dimensions.width, dimensions.height);
           }
           break;
       }
