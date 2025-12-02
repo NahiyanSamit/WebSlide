@@ -297,7 +297,25 @@ class App {
       if (this.presentationMode) {
         this.presentationMode.style.display = 'flex';
         this.state.setCurrentSlide(0);
-        this.renderPresentationSlide();
+        
+        // Request fullscreen first
+        if (this.presentationMode.requestFullscreen) {
+          this.presentationMode.requestFullscreen()
+            .then(() => {
+              // Render after fullscreen is active
+              setTimeout(() => {
+                this.renderPresentationSlide();
+              }, 100);
+            })
+            .catch(err => {
+              console.warn('Failed to enter fullscreen:', err);
+              // Render anyway if fullscreen fails
+              this.renderPresentationSlide();
+            });
+        } else {
+          // No fullscreen support, just render
+          this.renderPresentationSlide();
+        }
       }
     } catch (error) {
       console.error('Failed to start presentation:', error);
@@ -308,6 +326,13 @@ class App {
   private exitPresentationMode(): void {
     if (this.presentationMode) {
       this.presentationMode.style.display = 'none';
+      
+      // Exit fullscreen if active
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(err => {
+          console.warn('Failed to exit fullscreen:', err);
+        });
+      }
     }
   }
 
@@ -327,30 +352,25 @@ class App {
       const slide = this.state.getCurrentSlide();
       const dimensions = this.toolbar.getDimensions();
       
-      // Calculate fit dimensions
-      const availableHeight = window.innerHeight - CONFIG.CONTROLS_HEIGHT;
-      const availableWidth = window.innerWidth - CONFIG.PRESENTATION_PADDING;
+      // Use full screen dimensions
+      const availableHeight = window.innerHeight;
+      const availableWidth = window.innerWidth;
       
-      const fit = Utils.calculateFit(
-        dimensions.width,
-        dimensions.height,
-        availableWidth,
-        availableHeight
-      );
+      // Calculate scale to fit maximum screen area while maintaining aspect ratio
+      const scaleX = availableWidth / dimensions.width;
+      const scaleY = availableHeight / dimensions.height;
+      const scale = Math.min(scaleX, scaleY);
       
       // Create iframe for presentation
       const iframe = document.createElement('iframe');
       iframe.style.border = 'none';
       iframe.style.backgroundColor = 'white';
-      iframe.style.borderRadius = '1rem';
-      iframe.style.boxShadow = '0 25px 50px -12px rgba(0, 0, 0, 0.5)';
       
-      // Set iframe to slide dimensions, not fitted dimensions
+      // Set iframe to slide dimensions
       iframe.style.width = `${dimensions.width}px`;
       iframe.style.height = `${dimensions.height}px`;
       
-      // Calculate scale to fit
-      const scale = Math.min(fit.width / dimensions.width, fit.height / dimensions.height);
+      // Apply scale to maximize screen usage
       iframe.style.transform = `scale(${scale})`;
       iframe.style.transformOrigin = 'center center';
       
