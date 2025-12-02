@@ -70,6 +70,9 @@ export class CodeView {
         html5: true,
         angular1: false,
         ionic: false
+      },
+      format: {
+        enable: true
       }
     });
 
@@ -97,7 +100,9 @@ export class CodeView {
       formatOnType: false,
       autoClosingBrackets: 'always',
       autoClosingQuotes: 'always',
+      autoClosingTags: 'always',
       autoIndent: 'full',
+      linkedEditing: true,
       bracketPairColorization: {
         enabled: true
       },
@@ -147,8 +152,120 @@ export class CodeView {
       }
     });
 
+    // Setup auto-closing tags manually
+    this.setupAutoClosingTags();
+
     // Setup toolbar buttons
     this.setupToolbarButtons();
+  }
+
+  private setupAutoClosingTags(): void {
+    if (!this.editor) return;
+
+    let lastTagMap = new Map<string, string>();
+    let isUpdating = false;
+
+    this.editor.onDidChangeModelContent((e: any) => {
+      if (!e.changes || e.changes.length === 0 || isUpdating) return;
+
+      const change = e.changes[0];
+      const text = change.text;
+      const model = this.editor.getModel();
+      if (!model) return;
+
+      // Auto-close tags when '>' is typed
+      if (text === '>') {
+        const position = this.editor.getPosition();
+        if (!position) return;
+
+        const textBeforeCursor = model.getValueInRange({
+          startLineNumber: position.lineNumber,
+          startColumn: 1,
+          endLineNumber: position.lineNumber,
+          endColumn: position.column
+        });
+
+        const tagMatch = textBeforeCursor.match(/<(\w+)(?:\s[^>]*)?>/);
+        if (tagMatch) {
+          const tagName = tagMatch[1];
+          const selfClosingTags = ['img', 'input', 'br', 'hr', 'meta', 'link', 'area', 'base', 'col', 'embed', 'param', 'source', 'track', 'wbr'];
+          
+          if (!selfClosingTags.includes(tagName.toLowerCase())) {
+            const textAfterCursor = model.getValueInRange({
+              startLineNumber: position.lineNumber,
+              startColumn: position.column,
+              endLineNumber: position.lineNumber,
+              endColumn: model.getLineMaxColumn(position.lineNumber)
+            });
+
+            if (!textAfterCursor.startsWith(`</${tagName}>`)) {
+              isUpdating = true;
+              this.editor.executeEdits('auto-close', [{
+                range: {
+                  startLineNumber: position.lineNumber,
+                  startColumn: position.column,
+                  endLineNumber: position.lineNumber,
+                  endColumn: position.column
+                },
+                text: `</${tagName}>`
+              }]);
+              this.editor.setPosition(position);
+              isUpdating = false;
+            }
+          }
+        }
+      }
+
+      // Linked editing: sync opening and closing tags
+      setTimeout(() => {
+        if (isUpdating) return;
+        
+        const fullText = model.getValue();
+        const currentTagMap = new Map<string, string>();
+        
+        // Find all opening tags with their positions
+        const openTagRegex = /<(\w+)(?:\s[^>]*)?>/g;
+        let match;
+        
+        while ((match = openTagRegex.exec(fullText)) !== null) {
+          const tagName = match[1];
+          const position = match.index;
+          currentTagMap.set(`${position}`, tagName);
+        }
+
+        // Check if any tag names changed or were deleted
+        lastTagMap.forEach((oldTagName, position) => {
+          const newTagName = currentTagMap.get(position);
+          
+          // Tag was modified or deleted
+          if (newTagName !== oldTagName) {
+            const closingTagRegex = new RegExp(`<\\/${oldTagName}>`, 'g');
+            const text = model.getValue();
+            let closeMatch;
+            
+            isUpdating = true;
+            while ((closeMatch = closingTagRegex.exec(text)) !== null) {
+              const startPos = model.getPositionAt(closeMatch.index);
+              const endPos = model.getPositionAt(closeMatch.index + closeMatch[0].length);
+              
+              this.editor.executeEdits('sync-tags', [{
+                range: {
+                  startLineNumber: startPos.lineNumber,
+                  startColumn: startPos.column,
+                  endLineNumber: endPos.lineNumber,
+                  endColumn: endPos.column
+                },
+                text: newTagName ? `</${newTagName}>` : ''
+              }]);
+              break; // Update first matching closing tag
+            }
+            isUpdating = false;
+          }
+        });
+
+        lastTagMap = new Map(currentTagMap);
+      }, 50);
+    });
   }
 
   private setupToolbarButtons(): void {
