@@ -11,6 +11,7 @@ export class CodeView {
   private onChange: (code: string) => void;
   private editorContainer: HTMLElement | null = null;
   private isMonacoLoaded: boolean = false;
+  private pendingValue: string | null = null;
 
   constructor(onChange: (code: string) => void) {
     this.onChange = onChange;
@@ -157,6 +158,12 @@ export class CodeView {
 
     // Setup toolbar buttons
     this.setupToolbarButtons();
+
+    // Apply any pending value that was set before Monaco was ready
+    if (this.pendingValue !== null) {
+      this.editor.setValue(this.pendingValue);
+      this.pendingValue = null;
+    }
   }
 
   private setupAutoClosingTags(): void {
@@ -299,6 +306,9 @@ export class CodeView {
           this.editor.setPosition(currentPosition);
         }
       }
+    } else {
+      // Monaco not ready yet, store the value to apply later
+      this.pendingValue = code;
     }
   }
 
