@@ -64,6 +64,15 @@ export class CodeView {
   private async initializeMonaco(): Promise<void> {
     if (!this.editorContainer || !window.monaco) return;
 
+    // Configure HTML and CSS completion
+    window.monaco.languages.html.htmlDefaults.setOptions({
+      suggest: {
+        html5: true,
+        angular1: false,
+        ionic: false
+      }
+    });
+
     // Configure Monaco Editor
     this.editor = window.monaco.editor.create(this.editorContainer, {
       value: '',
@@ -76,8 +85,12 @@ export class CodeView {
       scrollBeyondLastLine: false,
       wordWrap: 'on',
       folding: true,
-      suggestOnTriggerCharacters: false,
-      quickSuggestions: false,
+      suggestOnTriggerCharacters: true,
+      quickSuggestions: {
+        other: true,
+        comments: false,
+        strings: true
+      },
       tabSize: 2,
       insertSpaces: true,
       formatOnPaste: false,
@@ -91,6 +104,35 @@ export class CodeView {
       padding: {
         top: 10,
         bottom: 10
+      },
+      // Enable suggestions
+      wordBasedSuggestions: 'off',
+      suggest: {
+        showWords: false,
+        showMethods: true,
+        showFunctions: true,
+        showConstructors: true,
+        showFields: true,
+        showVariables: true,
+        showClasses: true,
+        showStructs: true,
+        showInterfaces: true,
+        showModules: true,
+        showProperties: true,
+        showEvents: true,
+        showOperators: true,
+        showUnits: true,
+        showValues: true,
+        showConstants: true,
+        showEnums: true,
+        showEnumMembers: true,
+        showKeywords: true,
+        showSnippets: true,
+        showColors: true,
+        showFiles: true,
+        showReferences: true,
+        showFolders: true,
+        showTypeParameters: true
       }
     });
 
