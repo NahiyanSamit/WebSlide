@@ -81,9 +81,7 @@ class App {
 
     this.codeView = new CodeView((code) => this.handleCodeChange(code));
     this.preview = new Preview();
-    this.statusBar = new StatusBar({
-      onZoomChange: (zoom) => this.handleZoomChange(zoom)
-    });
+    this.statusBar = new StatusBar();
 
     // Listen for dimension changes
     this.toolbar.onDimensionChangeCallback((dimensions) => {
@@ -222,17 +220,6 @@ class App {
       this.preview.updatePreview(code, dimensions.width, dimensions.height);
     } catch (error) {
       console.error('Failed to update code:', error);
-    }
-  }
-
-  private handleZoomChange(zoom: number): void {
-    try {
-      this.preview.setZoom(zoom);
-      const slide = this.state.getCurrentSlide();
-      const dimensions = this.toolbar.getDimensions();
-      this.preview.updatePreview(slide.html, dimensions.width, dimensions.height);
-    } catch (error) {
-      console.error('Failed to change zoom:', error);
     }
   }
 
