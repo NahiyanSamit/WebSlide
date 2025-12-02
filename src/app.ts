@@ -5,20 +5,68 @@ import { Toolbar } from './Components/Toolbar';
 import { CodeView } from './Components/CodeView';
 import { Preview } from './Components/Preview';
 import { StatusBar } from './Components/Bottombar';
+import { CONFIG } from './config';
+import { Utils } from './utils';
 
+/**
+ * Main Application Class
+ * Professional orchestration of all components with proper error handling,
+ * keyboard shortcuts, and state management
+ */
 class App {
-  private state: PresentationState;
-  private sidebar: Sidebar;
-  private toolbar: Toolbar;
-  private codeView: CodeView;
-  private preview: Preview;
-  private statusBar: StatusBar;
+  private state!: PresentationState;
+  private sidebar!: Sidebar;
+  private toolbar!: Toolbar;
+  private codeView!: CodeView;
+  private preview!: Preview;
+  private statusBar!: StatusBar;
   private presentationMode: HTMLElement | null = null;
+  private isInitialized = false;
 
   constructor() {
-    this.state = new PresentationState();
-    
-    // Initialize components
+    this.initialize();
+  }
+
+  // ==================== Initialization ====================
+
+  private async initialize(): Promise<void> {
+    try {
+      // Initialize state
+      this.state = new PresentationState();
+      
+      // Subscribe to state changes
+      this.state.onChange((event, data) => {
+        this.handleStateChange(event, data);
+      });
+      
+      // Initialize components
+      this.initializeComponents();
+      
+      // Render UI
+      this.render();
+      
+      // Initial render of slides in sidebar
+      this.sidebar.renderSlides(this.state.slides, this.state.currentSlideIndex);
+      
+      // Load current slide
+      this.loadCurrentSlide();
+      
+      // Setup keyboard shortcuts
+      this.setupKeyboardShortcuts();
+      
+      // Setup auto-save
+      this.setupAutoSave();
+      
+      this.isInitialized = true;
+      console.log(`✅ ${CONFIG.APP_NAME} v${CONFIG.APP_VERSION} initialized successfully!`);
+      
+    } catch (error) {
+      console.error('❌ Failed to initialize application:', error);
+      this.showError('Failed to initialize the application. Please refresh the page.');
+    }
+  }
+
+  private initializeComponents(): void {
     this.sidebar = new Sidebar({
       onAddSlide: () => this.handleAddSlide(),
       onDeleteSlide: () => this.handleDeleteSlide(),
@@ -39,21 +87,52 @@ class App {
 
     // Listen for dimension changes
     this.toolbar.onDimensionChangeCallback((dimensions) => {
-      const slide = this.state.getCurrentSlide();
-      this.preview.updatePreview(slide.html, dimensions.width, dimensions.height);
+      try {
+        const slide = this.state.getCurrentSlide();
+        this.preview.updatePreview(slide.html, dimensions.width, dimensions.height);
+      } catch (error) {
+        console.error('Failed to update preview on dimension change:', error);
+      }
     });
-
-    this.render();
-    this.loadCurrentSlide();
   }
+
+  // ==================== State Change Handling ====================
+
+  private handleStateChange(event: string, data?: any): void {
+    if (!this.isInitialized) return;
+    
+    try {
+      switch (event) {
+        case 'slide-added':
+        case 'slide-deleted':
+        case 'slide-selected':
+        case 'presentation-loaded':
+          this.sidebar.renderSlides(this.state.slides, this.state.currentSlideIndex);
+          this.updateStatusBar();
+          break;
+        case 'slide-updated':
+          // Refresh preview if current slide was updated
+          if (data?.index === this.state.currentSlideIndex) {
+            this.loadCurrentSlide();
+          }
+          break;
+      }
+    } catch (error) {
+      console.error('Error handling state change:', error);
+    }
+  }
+
+  // ==================== UI Rendering ====================
 
   private render(): void {
     const app = document.getElementById('app');
-    if (!app) return;
+    if (!app) {
+      throw new Error('App container not found');
+    }
 
-    // Build layout
+    // Build main layout
     const mainLayout = document.createElement('div');
-    mainLayout.className = 'flex flex-col h-screen overflow-hidden';
+    mainLayout.className = 'flex flex-col h-screen overflow-hidden bg-gray-50';
 
     const contentArea = document.createElement('div');
     contentArea.className = 'flex-1 grid grid-cols-[280px_1fr] overflow-hidden';
@@ -62,7 +141,7 @@ class App {
     mainContent.className = 'flex flex-col bg-white overflow-hidden';
 
     const editorArea = document.createElement('div');
-    editorArea.className = 'flex-1 grid grid-cols-2 gap-0 overflow-hidden';
+    editorArea.className = 'flex-1 max-h-full grid grid-cols-2 gap-0 overflow-hidden';
 
     editorArea.appendChild(this.codeView.getElement());
     editorArea.appendChild(this.preview.getElement());
@@ -76,154 +155,164 @@ class App {
     mainLayout.appendChild(contentArea);
     mainLayout.appendChild(this.statusBar.getElement());
 
-    // Presentation mode
-    this.presentationMode = document.createElement('div');
-    this.presentationMode.id = 'presentationMode';
-    this.presentationMode.className = 'fixed top-0 left-0 w-full h-full bg-black z-[1000] flex flex-col items-center justify-center';
-    this.presentationMode.style.display = 'none';
-    this.presentationMode.innerHTML = `
-      <div class="flex-1 w-full flex items-center justify-center p-8" id="presentationContent"></div>
-      <div class="flex items-center gap-8 px-8 py-6 bg-black/80 rounded-2xl mb-8">
-        <button id="prevSlide" class="bg-primary text-white border-none px-8 py-4 text-2xl rounded-lg cursor-pointer transition-all hover:bg-indigo-600 hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed">←</button>
-        <span id="presentationCounter" class="text-white text-lg font-semibold min-w-[100px] text-center"></span>
-        <button id="nextSlide" class="bg-primary text-white border-none px-8 py-4 text-2xl rounded-lg cursor-pointer transition-all hover:bg-indigo-600 hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed">→</button>
-        <button id="exitPresentation" class="bg-danger text-white border-none px-6 py-3 rounded-lg cursor-pointer text-base font-semibold transition-all hover:bg-red-600">Exit</button>
-      </div>
-    `;
+    // Create presentation mode overlay
+    this.createPresentationMode();
 
     app.appendChild(mainLayout);
-    app.appendChild(this.presentationMode);
+    if (this.presentationMode) {
+      app.appendChild(this.presentationMode);
+    }
+
+    this.updateStatusBar();
+  }
+
+  private createPresentationMode(): void {
+    this.presentationMode = document.createElement('div');
+    this.presentationMode.id = 'presentationMode';
+    this.presentationMode.className = 'fixed inset-0 w-full h-full bg-black z-[1000] flex items-center justify-center';
+    this.presentationMode.style.display = 'none';
+    this.presentationMode.innerHTML = `
+      <div class="w-full h-full flex items-center justify-center" id="presentationContent"></div>
+    `;
 
     this.attachPresentationEvents();
-    this.updateStatusBar();
   }
+
+  // ==================== Slide Operations ====================
 
   private handleAddSlide(): void {
-    this.state.addSlide();
-    this.sidebar.renderSlides(this.state.slides, this.state.currentSlideIndex);
-    this.loadCurrentSlide();
-    this.updateStatusBar();
-  }
-
-  private updateStatusBar(): void {
-    this.statusBar.updateSlideInfo(
-      this.state.currentSlideIndex + 1,
-      this.state.slides.length
-    );
+    try {
+      this.state.addSlide();
+    } catch (error) {
+      console.error('Failed to add slide:', error);
+      this.showError('Failed to add slide');
+    }
   }
 
   private handleDeleteSlide(): void {
-    if (this.state.slides.length > 1) {
-      this.state.deleteSlide(this.state.currentSlideIndex);
-      this.sidebar.renderSlides(this.state.slides, this.state.currentSlideIndex);
-      this.loadCurrentSlide();
-      this.updateStatusBar();
+    try {
+      if (this.state.slideCount > 1) {
+        const confirmed = confirm('Are you sure you want to delete this slide?');
+        if (confirmed) {
+          this.state.deleteSlide(this.state.currentSlideIndex);
+        }
+      } else {
+        this.showInfo('Cannot delete the last slide');
+      }
+    } catch (error) {
+      console.error('Failed to delete slide:', error);
+      this.showError('Failed to delete slide');
     }
   }
 
   private handleSelectSlide(index: number): void {
-    this.state.setCurrentSlide(index);
-    this.loadCurrentSlide();
-    this.sidebar.renderSlides(this.state.slides, this.state.currentSlideIndex);
-    this.updateStatusBar();
+    try {
+      this.state.setCurrentSlide(index);
+      this.loadCurrentSlide();
+    } catch (error) {
+      console.error('Failed to select slide:', error);
+      this.showError('Failed to select slide');
+    }
   }
 
   private handleCodeChange(code: string): void {
-    this.state.updateSlide(this.state.currentSlideIndex, { html: code });
-    const dimensions = this.toolbar.getDimensions();
-    this.preview.updatePreview(code, dimensions.width, dimensions.height);
+    try {
+      this.state.updateSlide(this.state.currentSlideIndex, { html: code });
+      const dimensions = this.toolbar.getDimensions();
+      this.preview.updatePreview(code, dimensions.width, dimensions.height);
+    } catch (error) {
+      console.error('Failed to update code:', error);
+    }
   }
 
   private handleZoomChange(zoom: number): void {
-    this.preview.setZoom(zoom);
-    const slide = this.state.getCurrentSlide();
-    const dimensions = this.toolbar.getDimensions();
-    this.preview.updatePreview(slide.html, dimensions.width, dimensions.height);
-  }
-
-  private handleExport(): void {
-    const data = this.state.exportPresentation();
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'presentation.json';
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  private handleImport(file: File): void {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const data = e.target?.result as string;
-      if (this.state.importPresentation(data)) {
-        this.sidebar.renderSlides(this.state.slides, this.state.currentSlideIndex);
-        this.loadCurrentSlide();
-        this.updateStatusBar();
-      } else {
-        alert('Failed to import presentation');
-      }
-    };
-    reader.readAsText(file);
-  }
-
-  private handlePresent(): void {
-    if (this.presentationMode) {
-      this.presentationMode.style.display = 'flex';
-      this.state.setCurrentSlide(0);
-      this.renderPresentationSlide();
+    try {
+      this.preview.setZoom(zoom);
+      const slide = this.state.getCurrentSlide();
+      const dimensions = this.toolbar.getDimensions();
+      this.preview.updatePreview(slide.html, dimensions.width, dimensions.height);
+    } catch (error) {
+      console.error('Failed to change zoom:', error);
     }
   }
 
   private loadCurrentSlide(): void {
-    const slide = this.state.getCurrentSlide();
-    this.codeView.setValue(slide.html);
-    const dimensions = this.toolbar.getDimensions();
-    this.preview.updatePreview(slide.html, dimensions.width, dimensions.height);
+    try {
+      const slide = this.state.getCurrentSlide();
+      this.codeView.setValue(slide.html);
+      const dimensions = this.toolbar.getDimensions();
+      this.preview.updatePreview(slide.html, dimensions.width, dimensions.height);
+    } catch (error) {
+      console.error('Failed to load slide:', error);
+      this.showError('Failed to load slide');
+    }
+  }
+
+  private updateStatusBar(): void {
+    try {
+      this.statusBar.updateSlideInfo(
+        this.state.currentSlideIndex + 1,
+        this.state.slideCount
+      );
+    } catch (error) {
+      console.error('Failed to update status bar:', error);
+    }
+  }
+
+  // ==================== Import/Export ====================
+
+  private handleExport(): void {
+    try {
+      const data = this.state.exportPresentation();
+      const timestamp = new Date().toISOString().slice(0, 10);
+      const filename = `webslide-presentation-${timestamp}.json`;
+      
+      Utils.downloadFile(data, filename, 'application/json');
+      this.showSuccess('Presentation exported successfully!');
+    } catch (error) {
+      console.error('Failed to export presentation:', error);
+      this.showError('Failed to export presentation');
+    }
+  }
+
+  private async handleImport(file: File): Promise<void> {
+    try {
+      const data = await Utils.readFile(file);
+      
+      if (this.state.importPresentation(data)) {
+        this.showSuccess('Presentation imported successfully!');
+      } else {
+        this.showError('Invalid presentation file format');
+      }
+    } catch (error) {
+      console.error('Failed to import presentation:', error);
+      this.showError('Failed to import presentation');
+    }
+  }
+
+  // ==================== Presentation Mode ====================
+
+  private handlePresent(): void {
+    try {
+      if (this.presentationMode) {
+        this.presentationMode.style.display = 'flex';
+        this.state.setCurrentSlide(0);
+        this.renderPresentationSlide();
+      }
+    } catch (error) {
+      console.error('Failed to start presentation:', error);
+      this.showError('Failed to start presentation mode');
+    }
+  }
+
+  private exitPresentationMode(): void {
+    if (this.presentationMode) {
+      this.presentationMode.style.display = 'none';
+    }
   }
 
   private attachPresentationEvents(): void {
-    document.getElementById('prevSlide')?.addEventListener('click', () => {
-      if (this.state.currentSlideIndex > 0) {
-        this.state.setCurrentSlide(this.state.currentSlideIndex - 1);
-        this.renderPresentationSlide();
-      }
-    });
-
-    document.getElementById('nextSlide')?.addEventListener('click', () => {
-      if (this.state.currentSlideIndex < this.state.slides.length - 1) {
-        this.state.setCurrentSlide(this.state.currentSlideIndex + 1);
-        this.renderPresentationSlide();
-      }
-    });
-
-    document.getElementById('exitPresentation')?.addEventListener('click', () => {
-      if (this.presentationMode) {
-        this.presentationMode.style.display = 'none';
-      }
-    });
-
-    document.addEventListener('keydown', (e) => {
-      if (this.presentationMode && this.presentationMode.style.display !== 'none') {
-        if (e.key === 'ArrowRight' || e.key === ' ') {
-          e.preventDefault();
-          if (this.state.currentSlideIndex < this.state.slides.length - 1) {
-            this.state.setCurrentSlide(this.state.currentSlideIndex + 1);
-            this.renderPresentationSlide();
-          }
-        } else if (e.key === 'ArrowLeft') {
-          e.preventDefault();
-          if (this.state.currentSlideIndex > 0) {
-            this.state.setCurrentSlide(this.state.currentSlideIndex - 1);
-            this.renderPresentationSlide();
-          }
-        } else if (e.key === 'Escape') {
-          if (this.presentationMode) {
-            this.presentationMode.style.display = 'none';
-          }
-        }
-      }
-    });
+    // Navigation handled by keyboard only - no buttons
   }
 
   private renderPresentationSlide(): void {
@@ -232,9 +321,22 @@ class App {
     const prevBtn = document.getElementById('prevSlide') as HTMLButtonElement;
     const nextBtn = document.getElementById('nextSlide') as HTMLButtonElement;
 
-    if (content) {
+    if (!content) return;
+
+    try {
       const slide = this.state.getCurrentSlide();
       const dimensions = this.toolbar.getDimensions();
+      
+      // Calculate fit dimensions
+      const availableHeight = window.innerHeight - CONFIG.CONTROLS_HEIGHT;
+      const availableWidth = window.innerWidth - CONFIG.PRESENTATION_PADDING;
+      
+      const fit = Utils.calculateFit(
+        dimensions.width,
+        dimensions.height,
+        availableWidth,
+        availableHeight
+      );
       
       // Create iframe for presentation
       const iframe = document.createElement('iframe');
@@ -243,32 +345,21 @@ class App {
       iframe.style.borderRadius = '1rem';
       iframe.style.boxShadow = '0 25px 50px -12px rgba(0, 0, 0, 0.5)';
       
-      // Calculate aspect ratio and fit to screen
-      const aspectRatio = dimensions.width / dimensions.height;
+      // Set iframe to slide dimensions, not fitted dimensions
+      iframe.style.width = `${dimensions.width}px`;
+      iframe.style.height = `${dimensions.height}px`;
       
-      // Get available space (accounting for controls at bottom)
-      const availableHeight = window.innerHeight - 200; // Controls take ~200px
-      const availableWidth = window.innerWidth - 64; // Padding
-      
-      // Calculate which dimension is limiting
-      const widthBasedHeight = availableWidth / aspectRatio;
-      const heightBasedWidth = availableHeight * aspectRatio;
-      
-      if (widthBasedHeight <= availableHeight) {
-        // Width is the limiting factor
-        iframe.style.width = `${availableWidth}px`;
-        iframe.style.height = `${widthBasedHeight}px`;
-      } else {
-        // Height is the limiting factor
-        iframe.style.width = `${heightBasedWidth}px`;
-        iframe.style.height = `${availableHeight}px`;
-      }
+      // Calculate scale to fit
+      const scale = Math.min(fit.width / dimensions.width, fit.height / dimensions.height);
+      iframe.style.transform = `scale(${scale})`;
+      iframe.style.transformOrigin = 'center center';
       
       iframe.sandbox.add('allow-scripts', 'allow-same-origin');
       
       content.innerHTML = '';
       content.appendChild(iframe);
       
+      // Write content to iframe
       const previewHtml = `
         <!DOCTYPE html>
         <html>
@@ -276,9 +367,7 @@ class App {
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <style>
-            * {
-              box-sizing: border-box;
-            }
+            * { box-sizing: border-box; }
             html, body {
               margin: 0;
               padding: 0;
@@ -289,9 +378,7 @@ class App {
             }
           </style>
         </head>
-        <body>
-          ${slide.html}
-        </body>
+        <body>${slide.html}</body>
         </html>
       `;
 
@@ -301,30 +388,159 @@ class App {
         iframeDoc.write(previewHtml);
         iframeDoc.close();
       }
-    }
 
-    if (counter) {
-      counter.textContent = `${this.state.currentSlideIndex + 1} / ${this.state.slides.length}`;
-    }
+      // Update controls
+      if (counter) {
+        counter.textContent = `${this.state.currentSlideIndex + 1} / ${this.state.slideCount}`;
+      }
 
-    if (prevBtn) {
-      prevBtn.disabled = this.state.currentSlideIndex === 0;
-    }
+      if (prevBtn) {
+        prevBtn.disabled = this.state.isFirstSlide;
+      }
 
-    if (nextBtn) {
-      nextBtn.disabled = this.state.currentSlideIndex === this.state.slides.length - 1;
+      if (nextBtn) {
+        nextBtn.disabled = this.state.isLastSlide;
+      }
+    } catch (error) {
+      console.error('Failed to render presentation slide:', error);
     }
+  }
+
+  // ==================== Keyboard Shortcuts ====================
+
+  private setupKeyboardShortcuts(): void {
+    document.addEventListener('keydown', (e) => {
+      // Presentation mode navigation
+      if (this.presentationMode && this.presentationMode.style.display !== 'none') {
+        this.handlePresentationKeyboard(e);
+        return;
+      }
+
+      // Global shortcuts
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key.toLowerCase()) {
+          case 'n':
+            e.preventDefault();
+            this.handleAddSlide();
+            break;
+          case 's':
+            e.preventDefault();
+            this.handleSave();
+            break;
+          case '=':
+          case '+':
+            e.preventDefault();
+            this.statusBar.zoomIn();
+            break;
+          case '-':
+            e.preventDefault();
+            this.statusBar.zoomOut();
+            break;
+        }
+      }
+
+      // Other shortcuts
+      if (e.key === 'Delete' && e.target === document.body) {
+        e.preventDefault();
+        this.handleDeleteSlide();
+      }
+
+      if (e.key === 'F5') {
+        e.preventDefault();
+        this.handlePresent();
+      }
+    });
+  }
+
+  private handlePresentationKeyboard(e: KeyboardEvent): void {
+    switch (e.key) {
+      case 'ArrowRight':
+      case ' ':
+        e.preventDefault();
+        this.state.nextSlide();
+        this.renderPresentationSlide();
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        this.state.previousSlide();
+        this.renderPresentationSlide();
+        break;
+      case 'Escape':
+        e.preventDefault();
+        this.exitPresentationMode();
+        break;
+      case 'Home':
+        e.preventDefault();
+        this.state.setCurrentSlide(0);
+        this.renderPresentationSlide();
+        break;
+      case 'End':
+        e.preventDefault();
+        this.state.setCurrentSlide(this.state.slideCount - 1);
+        this.renderPresentationSlide();
+        break;
+    }
+  }
+
+  // ==================== Auto-Save ====================
+
+  private setupAutoSave(): void {
+    // Save before page unload
+    window.addEventListener('beforeunload', () => {
+      this.state.forceSave();
+    });
+  }
+
+  private handleSave(): void {
+    try {
+      if (this.state.forceSave()) {
+        this.showSuccess('Presentation saved!');
+      } else {
+        this.showError('Failed to save presentation');
+      }
+    } catch (error) {
+      console.error('Save failed:', error);
+      this.showError('Failed to save presentation');
+    }
+  }
+
+  // ==================== User Feedback ====================
+
+  private showError(message: string): void {
+    console.error(message);
+    // TODO: Implement toast notifications
+    alert(`❌ ${message}`);
+  }
+
+  private showSuccess(message: string): void {
+    console.log(`✅ ${message}`);
+    // TODO: Implement toast notifications
+  }
+
+  private showInfo(message: string): void {
+    console.info(`ℹ️ ${message}`);
+    // TODO: Implement toast notifications
+    alert(`ℹ️ ${message}`);
   }
 }
 
-// Initialize the app
-function initApp() {
-  new App();
-  console.log('WebSlide initialized successfully!');
+// ==================== Application Entry Point ====================
+
+function initializeApp(): void {
+  try {
+    new App();
+  } catch (error) {
+    console.error('❌ Fatal error during app initialization:', error);
+    alert('Failed to initialize WebSlide. Please refresh the page and try again.');
+  }
 }
 
+// Start the app when DOM is ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initApp);
+  document.addEventListener('DOMContentLoaded', initializeApp);
 } else {
-  initApp();
+  initializeApp();
 }
+
+// Export for debugging
+(window as any).WebSlide = { App, CONFIG };

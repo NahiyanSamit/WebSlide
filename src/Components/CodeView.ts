@@ -12,14 +12,14 @@ export class CodeView {
 
   private createContainer(): HTMLElement {
     const div = document.createElement('div');
-    div.className = 'flex flex-col bg-[#1e1e1e] border-r border-gray-300';
+    div.className = 'flex flex-col bg-[#1e1e1e] border-r border-gray-300 h-full max-h-full overflow-hidden';
     div.innerHTML = `
-      <div class="px-4 py-3 bg-[#2d2d2d] border-b border-[#333]">
+      <div class="px-4 py-3 bg-[#2d2d2d] border-b border-[#333] flex-shrink-0">
         <h3 class="text-sm font-semibold text-gray-300">💻 Code</h3>
       </div>
-      <div class="flex-1 overflow-auto p-4">
+      <div class="flex-1 overflow-hidden p-4 min-h-0">
         <textarea id="codeEditor" 
-          class="w-full h-full bg-[#1e1e1e] border border-[#333] rounded p-4 font-mono text-sm text-gray-300 resize-none outline-none focus:border-primary"></textarea>
+          class="w-full h-full max-h-full bg-[#1e1e1e] border border-[#333] rounded p-4 font-mono text-sm text-gray-300 resize-none outline-none focus:border-primary"></textarea>
       </div>
     `;
     return div;

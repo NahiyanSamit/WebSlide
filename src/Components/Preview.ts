@@ -10,14 +10,14 @@ export class Preview {
 
   private createContainer(): HTMLElement {
     const div = document.createElement('div');
-    div.className = 'flex flex-col bg-gray-100';
+    div.className = 'flex h-full max-h-full flex-col bg-gray-100 overflow-hidden';
     div.innerHTML = `
-      <div class="px-4 py-3 bg-gray-200 border-b border-gray-300">
+      <div class="px-4 py-3 bg-gray-200 border-b border-gray-300 flex-shrink-0">
         <h3 class="text-sm font-semibold text-gray-700">👁 Preview</h3>
       </div>
-      <div class="flex-1 overflow-auto p-4 flex items-center justify-center">
+      <div class="flex-1 p-4 flex items-center justify-center overflow-hidden min-h-0">
         <iframe id="previewFrame" 
-          class="border border-gray-300 rounded bg-white" 
+          class="border max-h-full max-w-full border-gray-300 rounded bg-white" 
           sandbox="allow-scripts allow-same-origin"></iframe>
       </div>
     `;
@@ -40,6 +40,7 @@ export class Preview {
             padding: 0;
             width: 100%;
             height: 100%;
+            overflow: hidden;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
           }
         </style>

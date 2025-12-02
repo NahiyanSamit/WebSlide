@@ -11,7 +11,6 @@ export class Sidebar {
   private container: HTMLElement;
   private slidesList: HTMLElement;
   private actions: SidebarActions;
-  private currentIndex: number = 0;
 
   constructor(actions: SidebarActions) {
     this.actions = actions;
@@ -72,7 +71,6 @@ export class Sidebar {
   }
 
   public renderSlides(slides: Slide[], currentIndex: number): void {
-    this.currentIndex = currentIndex;
     this.slidesList.innerHTML = '';
     
     slides.forEach((slide, index) => {

@@ -92,6 +92,20 @@ export class StatusBar {
     return this.zoomLevel / 100;
   }
 
+  public zoomIn(): void {
+    const zoomSlider = this.container.querySelector('#zoomSlider') as HTMLInputElement;
+    this.zoomLevel = Math.min(this.zoomLevel + 10, 200);
+    this.updateZoom();
+    if (zoomSlider) zoomSlider.value = this.zoomLevel.toString();
+  }
+
+  public zoomOut(): void {
+    const zoomSlider = this.container.querySelector('#zoomSlider') as HTMLInputElement;
+    this.zoomLevel = Math.max(this.zoomLevel - 10, 25);
+    this.updateZoom();
+    if (zoomSlider) zoomSlider.value = this.zoomLevel.toString();
+  }
+
   public getElement(): HTMLElement {
     return this.container;
   }
