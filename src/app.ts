@@ -448,14 +448,6 @@ class App {
             this.handleSave();
             break;
           case '=':
-          case '+':
-            e.preventDefault();
-            this.statusBar.zoomIn();
-            break;
-          case '-':
-            e.preventDefault();
-            this.statusBar.zoomOut();
-            break;
         }
       }
 
