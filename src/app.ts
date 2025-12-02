@@ -4,6 +4,7 @@ import { Sidebar } from './Components/Sidebar';
 import { Toolbar } from './Components/Toolbar';
 import { CodeView } from './Components/CodeView';
 import { Preview } from './Components/Preview';
+import { StatusBar } from './Components/Bottombar';
 
 class App {
   private state: PresentationState;
@@ -11,6 +12,7 @@ class App {
   private toolbar: Toolbar;
   private codeView: CodeView;
   private preview: Preview;
+  private statusBar: StatusBar;
   private presentationMode: HTMLElement | null = null;
 
   constructor() {
@@ -31,6 +33,15 @@ class App {
 
     this.codeView = new CodeView((code) => this.handleCodeChange(code));
     this.preview = new Preview();
+    this.statusBar = new StatusBar({
+      onZoomChange: (zoom) => this.handleZoomChange(zoom)
+    });
+
+    // Listen for dimension changes
+    this.toolbar.onDimensionChangeCallback((dimensions) => {
+      const slide = this.state.getCurrentSlide();
+      this.preview.updatePreview(slide.html, dimensions.width, dimensions.height);
+    });
 
     this.render();
     this.loadCurrentSlide();
@@ -41,8 +52,11 @@ class App {
     if (!app) return;
 
     // Build layout
-    const layout = document.createElement('div');
-    layout.className = 'grid grid-cols-[280px_1fr] h-screen overflow-hidden';
+    const mainLayout = document.createElement('div');
+    mainLayout.className = 'flex flex-col h-screen overflow-hidden';
+
+    const contentArea = document.createElement('div');
+    contentArea.className = 'flex-1 grid grid-cols-[280px_1fr] overflow-hidden';
 
     const mainContent = document.createElement('main');
     mainContent.className = 'flex flex-col bg-white overflow-hidden';
@@ -56,8 +70,11 @@ class App {
     mainContent.appendChild(this.toolbar.getElement());
     mainContent.appendChild(editorArea);
 
-    layout.appendChild(this.sidebar.getElement());
-    layout.appendChild(mainContent);
+    contentArea.appendChild(this.sidebar.getElement());
+    contentArea.appendChild(mainContent);
+
+    mainLayout.appendChild(contentArea);
+    mainLayout.appendChild(this.statusBar.getElement());
 
     // Presentation mode
     this.presentationMode = document.createElement('div');
@@ -65,8 +82,8 @@ class App {
     this.presentationMode.className = 'fixed top-0 left-0 w-full h-full bg-black z-[1000] flex flex-col items-center justify-center';
     this.presentationMode.style.display = 'none';
     this.presentationMode.innerHTML = `
-      <div class="flex-1 w-full max-w-7xl flex items-center justify-center p-16" id="presentationContent"></div>
-      <div class="flex items-center gap-8 px-8 py-8 bg-black/80 rounded-2xl mb-8">
+      <div class="flex-1 w-full flex items-center justify-center p-8" id="presentationContent"></div>
+      <div class="flex items-center gap-8 px-8 py-6 bg-black/80 rounded-2xl mb-8">
         <button id="prevSlide" class="bg-primary text-white border-none px-8 py-4 text-2xl rounded-lg cursor-pointer transition-all hover:bg-indigo-600 hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed">←</button>
         <span id="presentationCounter" class="text-white text-lg font-semibold min-w-[100px] text-center"></span>
         <button id="nextSlide" class="bg-primary text-white border-none px-8 py-4 text-2xl rounded-lg cursor-pointer transition-all hover:bg-indigo-600 hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed">→</button>
@@ -74,16 +91,25 @@ class App {
       </div>
     `;
 
-    app.appendChild(layout);
+    app.appendChild(mainLayout);
     app.appendChild(this.presentationMode);
 
     this.attachPresentationEvents();
+    this.updateStatusBar();
   }
 
   private handleAddSlide(): void {
     this.state.addSlide();
     this.sidebar.renderSlides(this.state.slides, this.state.currentSlideIndex);
     this.loadCurrentSlide();
+    this.updateStatusBar();
+  }
+
+  private updateStatusBar(): void {
+    this.statusBar.updateSlideInfo(
+      this.state.currentSlideIndex + 1,
+      this.state.slides.length
+    );
   }
 
   private handleDeleteSlide(): void {
@@ -91,6 +117,7 @@ class App {
       this.state.deleteSlide(this.state.currentSlideIndex);
       this.sidebar.renderSlides(this.state.slides, this.state.currentSlideIndex);
       this.loadCurrentSlide();
+      this.updateStatusBar();
     }
   }
 
@@ -98,11 +125,20 @@ class App {
     this.state.setCurrentSlide(index);
     this.loadCurrentSlide();
     this.sidebar.renderSlides(this.state.slides, this.state.currentSlideIndex);
+    this.updateStatusBar();
   }
 
   private handleCodeChange(code: string): void {
     this.state.updateSlide(this.state.currentSlideIndex, { html: code });
-    this.preview.updatePreview(code);
+    const dimensions = this.toolbar.getDimensions();
+    this.preview.updatePreview(code, dimensions.width, dimensions.height);
+  }
+
+  private handleZoomChange(zoom: number): void {
+    this.preview.setZoom(zoom);
+    const slide = this.state.getCurrentSlide();
+    const dimensions = this.toolbar.getDimensions();
+    this.preview.updatePreview(slide.html, dimensions.width, dimensions.height);
   }
 
   private handleExport(): void {
@@ -123,6 +159,7 @@ class App {
       if (this.state.importPresentation(data)) {
         this.sidebar.renderSlides(this.state.slides, this.state.currentSlideIndex);
         this.loadCurrentSlide();
+        this.updateStatusBar();
       } else {
         alert('Failed to import presentation');
       }
@@ -141,7 +178,8 @@ class App {
   private loadCurrentSlide(): void {
     const slide = this.state.getCurrentSlide();
     this.codeView.setValue(slide.html);
-    this.preview.updatePreview(slide.html);
+    const dimensions = this.toolbar.getDimensions();
+    this.preview.updatePreview(slide.html, dimensions.width, dimensions.height);
   }
 
   private attachPresentationEvents(): void {
@@ -196,11 +234,73 @@ class App {
 
     if (content) {
       const slide = this.state.getCurrentSlide();
-      content.innerHTML = `
-        <div class="w-full h-full bg-white rounded-2xl shadow-2xl overflow-hidden">
+      const dimensions = this.toolbar.getDimensions();
+      
+      // Create iframe for presentation
+      const iframe = document.createElement('iframe');
+      iframe.style.border = 'none';
+      iframe.style.backgroundColor = 'white';
+      iframe.style.borderRadius = '1rem';
+      iframe.style.boxShadow = '0 25px 50px -12px rgba(0, 0, 0, 0.5)';
+      
+      // Calculate aspect ratio and fit to screen
+      const aspectRatio = dimensions.width / dimensions.height;
+      
+      // Get available space (accounting for controls at bottom)
+      const availableHeight = window.innerHeight - 200; // Controls take ~200px
+      const availableWidth = window.innerWidth - 64; // Padding
+      
+      // Calculate which dimension is limiting
+      const widthBasedHeight = availableWidth / aspectRatio;
+      const heightBasedWidth = availableHeight * aspectRatio;
+      
+      if (widthBasedHeight <= availableHeight) {
+        // Width is the limiting factor
+        iframe.style.width = `${availableWidth}px`;
+        iframe.style.height = `${widthBasedHeight}px`;
+      } else {
+        // Height is the limiting factor
+        iframe.style.width = `${heightBasedWidth}px`;
+        iframe.style.height = `${availableHeight}px`;
+      }
+      
+      iframe.sandbox.add('allow-scripts', 'allow-same-origin');
+      
+      content.innerHTML = '';
+      content.appendChild(iframe);
+      
+      const previewHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            * {
+              box-sizing: border-box;
+            }
+            html, body {
+              margin: 0;
+              padding: 0;
+              width: ${dimensions.width}px;
+              height: ${dimensions.height}px;
+              overflow: hidden;
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            }
+          </style>
+        </head>
+        <body>
           ${slide.html}
-        </div>
+        </body>
+        </html>
       `;
+
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (iframeDoc) {
+        iframeDoc.open();
+        iframeDoc.write(previewHtml);
+        iframeDoc.close();
+      }
     }
 
     if (counter) {
